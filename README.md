@@ -6,6 +6,7 @@
 下载工程
 
     修改openerp_celery/data/sms.xml中xxx数据 配置自己的默认短信网关数据
+    配置celery_worker.py 24-27行数据库配置
 
 
 安装rabbitMQ
