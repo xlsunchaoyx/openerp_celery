@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+    <data noupdate="0">
+
+        <record id="sms_default_gateway" model="sms.gateway">
+            <field name="name">短信网关</field>
+            <field name="url">xxx</field>
+        </record>
+
+        <record id="sms_default_gateway_param_user" model="sms.gateway.param">
+            <field name="type">user</field>
+            <field name="name">xxx</field>
+            <field name="value">xxx</field>
+            <field name="gateway_id" ref="sms_default_gateway"/>
+        </record>
+
+        <record id="sms_default_gateway_param_password" model="sms.gateway.param">
+            <field name="type">password</field>
+            <field name="name">xxx</field>
+            <field name="value">xxx</field>
+            <field name="gateway_id" ref="sms_default_gateway"/>
+        </record>
+
+        <record id="sms_default_gateway_param_msgtype" model="sms.gateway.param">
+            <field name="type">extra</field>
+            <field name="name">xxx</field>
+            <field name="value">xxx</field>
+            <field name="gateway_id" ref="sms_default_gateway"/>
+        </record>
+
+        <record id="sms_default_gateway_param_msisdn" model="sms.gateway.param">
+            <field name="type">to</field>
+            <field name="name">xxx</field>
+            <field name="value"></field>
+            <field name="gateway_id" ref="sms_default_gateway"/>
+        </record>
+
+        <record id="sms_default_gateway_param_smscontent" model="sms.gateway.param">
+            <field name="type">sms</field>
+            <field name="name">xxx</field>
+            <field name="value"></field>
+            <field name="gateway_id" ref="sms_default_gateway"/>
+        </record>
+
+    </data>
+</openerp>

@@ -1,0 +1,162 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+        <menuitem name="SMS Settings" id="menu_sms_gateway_menu" parent="base.menu_config"/>
+
+        <record model="ir.ui.view" id="sms_gateway_tree">
+            <field name="name">sms.gateway.tree</field>
+            <field name="model">sms.gateway</field>
+            <field name="priority" eval="8"/>
+            <field name="arch" type="xml">
+                <tree string="Gateway"  version="7.0">
+                    <field name="name" />
+                    <field name="url"/>
+                    <field name="state"/>
+                    <field name="max_send"/>
+                    <field name="param_ids"/>
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="sms_gateway_form">
+            <field name="name">sms.gateway.form</field>
+            <field name="model">sms.gateway</field>
+            <field name="arch" type="xml">
+                <form string="Gateway" version="7.0">
+                    <group colspan="2" col="4">
+                        <field name="name" />
+                        <field name="url" />
+                        <field name="state" />
+                        <field name="max_send" />
+                    </group>
+                    <group colspan="4">
+                        <field name="param_ids">
+                            <tree>
+                                <field name="type"/>
+                                <field name="name"/>
+                                <field name="value"/>
+                            </tree>
+                        </field>
+                    </group>
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="action_sms_gateway">
+            <field name="name">Gateway</field>
+            <field name="res_model">sms.gateway</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">form,tree</field>
+            <field name="view_id" ref="sms_gateway_tree" />
+        </record>
+
+        <menuitem name="Gateway List" id="child_menu_sms_gateway_menu" parent="menu_sms_gateway_menu" action="action_sms_gateway"/>
+
+
+        <record model="ir.ui.view" id="sms_gateway_queue_tree">
+            <field name="name">sms.gateway.queue.tree</field>
+            <field name="model">sms.gateway.queue</field>
+            <field name="priority" eval="8"/>
+            <field name="arch" type="xml">
+                <tree string="SMS Queue"  version="7.0">
+                    <field name="gateway_id" />
+                    <field name="state" />
+                    <field name="mobile" />
+                    <field name="msg" />
+                    <field name="create_time" />
+                    <field name="is_manual" />
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="sms_gateway_queue_form">
+            <field name="name">sms.gateway.queue.form</field>
+            <field name="model">sms.gateway.queue</field>
+            <field name="arch" type="xml">
+                <form string="SMS Queue" version="7.0">
+                    <group colspan="4">
+                        <field name="url" />
+                    </group>
+                    <group colspan="2" col="4">
+                        <field name="gateway_id" />
+                        <field name="state" />
+                        <field name="mobile" />
+                        <field name="msg" />
+                        <field name="is_manual" />
+                    </group>
+                    <group colspan="4">
+                        <field name="content" />
+                        <field name="send_count" />
+                        <field name="create_time" />
+                        <field name="send_time" />
+                        <field name="back_time" />
+                    </group>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids" widget="mail_followers"/>
+                        <field name="message_ids" widget="mail_thread"/>
+                    </div>
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="action_sms_gateway_queue">
+            <field name="name">SMS Queue</field>
+            <field name="res_model">sms.gateway.queue</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">form,tree</field>
+            <field name="view_id" ref="sms_gateway_queue_tree" />
+        </record>
+
+        <menuitem name="SMS Queue" id="child_menu_sms_gateway_queue_menu" parent="menu_sms_gateway_menu" action="action_sms_gateway_queue"/>
+
+
+        <record model="ir.ui.view" id="sms_gateway_history_tree">
+            <field name="name">sms.gateway.history.tree</field>
+            <field name="model">sms.gateway.history</field>
+            <field name="priority" eval="8"/>
+            <field name="arch" type="xml">
+                <tree string="SMS Send History"  version="7.0">
+                    <field name="gateway_id" />
+                    <field name="mobile" />
+                    <field name="msg" />
+                    <field name="create_time" />
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="sms_gateway_history_form">
+            <field name="name">sms.gateway.history.form</field>
+            <field name="model">sms.gateway.history</field>
+            <field name="arch" type="xml">
+                <form string="SMS Send History" version="7.0">
+                    <group colspan="4">
+                        <field name="url" />
+                    </group>
+                    <group colspan="2" col="4">
+                        <field name="gateway_id" />
+                        <field name="queue_id" />
+                        <field name="mobile" />
+                        <field name="msg" />
+                    </group>
+                    <group colspan="4">
+                        <field name="number_of_times" />
+                        <field name="create_time" />
+                        <field name="send_time" />
+                        <field name="back_time" />
+                    </group>
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="action_sms_gateway_history">
+            <field name="name">SMS Send History</field>
+            <field name="res_model">sms.gateway.history</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">form,tree</field>
+            <field name="view_id" ref="sms_gateway_history_tree" />
+        </record>
+
+        <menuitem name="SMS Send History" id="child_menu_sms_gateway_history_menu" parent="menu_sms_gateway_menu" action="action_sms_gateway_history"/>
+
+    </data>
+</openerp>

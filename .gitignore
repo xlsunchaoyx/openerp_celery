@@ -1,0 +1,8 @@
+*.py[oc]
+*.conf
+*.log
+*.swp
+*.log*
+*.*~
+*.swo
+.DS_Store
