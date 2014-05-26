@@ -2,16 +2,21 @@
 import datetime
 import urllib
 import re
+import openerp.tools.config as config
 from openerp.osv import orm, osv, fields
 from openerp.tools.translate import _
-from openerp.addons.openerp_celery.tasks import send_sms
+from openerp.addons.openerp_celery.celery_worker import send_sms
+from celery.task import current
 
 
 """
     短信发送实现方式
-    
+
     调用短信写入
         self.pool.get('sms.gateway.queue').create_sms(cr, uid, {'mobile': '1xxxxxxxxxx', 'msg': 'msg',})
+    因为MessageQueue写入是实时操作 OE是按照事物提交或者回滚
+    所以会有发送时 短信网关的数据还在OE的事务中 并未提交到数据库
+    解决的办法是已经支持了短信重新发送
 """
 
 
@@ -25,11 +30,10 @@ class sms_gateway(osv.Model):
         'state': fields.selection([('ava', 'Available'), ('unava', 'Unavailable')],
             'State', required=True, help='Whether a gateway is available'),
         'param_ids': fields.one2many('sms.gateway.param', 'gateway_id', 'Parameters'),
-        'max_send': fields.integer('Max send count'),
+        'max_send': fields.integer('Max send count'),   # TODO 删除掉
     }
 
     _defaults = {
-        'max_send': 3,
         'state': 'ava',
     }
 
@@ -82,7 +86,7 @@ class sms_gateway_queue(osv.Model):
 
     _columns = {
         'gateway_id': fields.many2one('sms.gateway', 'SMS Gateway', required=True, help=u"使用的短信网关 默认取第一个"),
-        'url': fields.char('SMS URL', size=256, readonly=True,
+        'url': fields.char('SMS URL', size=1024, readonly=True,
             states={'draft': [('readonly', False)]},
             help=u"短信发送url 在队列状态中清楚 会在发送的时候根据最新数据重新生成"),
         'mobile': fields.char('Mobile No', size=256,
@@ -95,9 +99,9 @@ class sms_gateway_queue(osv.Model):
             ('sending', 'Waiting'),
             ('send', 'Sent'),
             ('error', 'Error'),
-        ], 'Message Status', select=True, readonly=False),#TODO
+        ], 'Message Status', select=True, readonly=True, states={'draft': [('readonly', False)], 'error': [('readonly', False)]}),
         'content': fields.text('Return Message', size=256, readonly=True),
-        'send_count': fields.integer('Send Count', readonly=False),#TODO
+        'send_count': fields.integer('Send Count', readonly=True),
         'create_time': fields.datetime('Create Time', readonly=True),
         'send_time': fields.datetime('Send Time', readonly=True),
         'back_time': fields.datetime('Back Time', readonly=True),
@@ -121,8 +125,13 @@ class sms_gateway_queue(osv.Model):
 
     def create(self, cr, uid, vals, context=None):
         """创建短信队列 根据手机号和短信内容生成短信发送url"""
+        if vals.get('gateway_id', None):
+            gateway_id = vals['gateway_id']
+        else:
+            gateway_id = self._get_gateway_id(cr, uid)
+
         gateway_obj = self.pool.get('sms.gateway')
-        gateway = gateway_obj.browse(cr, uid, vals['gateway_id'])
+        gateway = gateway_obj.browse(cr, uid, gateway_id)
         url = gateway.get_url(vals['mobile'], vals['msg'])
         vals['url'] = url
         res_id = super(sms_gateway_queue, self).create(cr, uid, vals, context=context)
@@ -142,49 +151,58 @@ class sms_gateway_queue(osv.Model):
 
     def send(self, cr, uid, ids, context=None):
         """发送短信 发送前校验 通过调用_send_sms发送"""
+        if current.request.retries >= current.max_retries:
+            self.write(cr, uid, ids[0], {'state': 'error'})
+            return 'nosend'
+
+        user = self.pool.get('res.users').browse(cr, uid, uid, context)
         queue = self.browse(cr, uid, ids[0], context)
-        gateway = queue.gateway_id
+
+        if not config.get('sms_send'):
+            msg = [u'发送前验证失败', u'配置参数sms_send 验证没有配置 不允许发送', user.partner_id.id]
+            queue.send_message(msg)
+            self.write(cr, uid, ids[0], {'state': 'error'})
+            return 'nosend'
+
+        try:
+            gateway = queue.gateway_id
+        except AttributeError:
+            return '10002'
 
         # 如果url不存在 重新生成
         if not queue.url:
             url = gateway.get_url(queue.mobile, queue.msg)
             self.write(cr, uid, ids[0], {'url': url})
 
-        user = self.pool.get('res.users').browse(cr, uid, uid, context)
         if queue.state != 'draft':
             msg = [u'发送前验证失败', u'当前状态不是队列状态 %s' % queue.state, user.partner_id.id]
             queue.send_message(msg)
-            return False
+            self.write(cr, uid, ids[0], {'state': 'error'})
+            return 'nosend'
 
         if gateway.state == 'unava':
             msg = [u'发送前验证失败', u'当前队列指定的短信网关不可用', user.partner_id.id]
             queue.send_message(msg)
             self.write(cr, uid, ids[0], {'state': 'error'})
-            return False
-
-        if queue.send_count >= gateway.max_send:
-            msg = [u'发送前验证失败', u'发送次数达到当前队列允许的最大发送次数: %s次' % gateway.max_send, user.partner_id.id]
-            queue.send_message(msg)
-            self.write(cr, uid, ids[0], {'state': 'error'})
-            return False
+            return 'nosend'
 
         if len(queue.msg) > 160:
             msg = [u'发送前验证失败', u'超出允许发送的最大160字符长度', user.partner_id.id]
             queue.send_message(msg)
             self.write(cr, uid, ids[0], {'state': 'error'})
-            return False
+            return 'nosend'
 
         if not re.match(r'^1\d{10}$', queue.mobile):
             msg = [u'发送前验证失败', u'手机号码格式错误', user.partner_id.id]
             queue.send_message(msg)
             self.write(cr, uid, ids[0], {'state': 'error'})
-            return False
+            return 'nosend'
 
         return self._send_sms(cr, uid, ids, context)
 
     def _send_sms(self, cr, uid, ids, context=None):
         """通过http发送短信"""
-        error = False
+        result = 'success'
 
         queue = self.browse(cr, uid, ids[0], context)
         user = self.pool.get('res.users').browse(cr, uid, uid, context)
@@ -203,87 +221,81 @@ class sms_gateway_queue(osv.Model):
             self.write(cr, uid, ids[0], {
                 'back_time': back_time,
                 'state': 'draft',
-                'content': u'IOError 无法连接到短信服务器',})
+                'content': u'IOError 无法连接到短信服务器', })
 
             msg = [u'发送失败', u'IOError 无法连接到短信服务器', user.partner_id.id]
             queue.send_message(msg)
 
-            # 加入到短信队列
-            send_sms.delay(ids[0])
+            result = '10003'
 
-            error = True
-
-        if error: return error
+        if result == '10003':
+            return result
 
         # 处理接口返回数据
         try:
-            result = smshtml.read()
+            html = smshtml.read()
         except Exception, e:
             back_time = datetime.datetime.now()
             self.write(cr, uid, ids[0], {
                 'back_time': back_time,
                 'state': 'draft',
-                'content': u'未知异常 %s' % e,})
+                'content': u'未知异常 %s' % e, })
 
             msg = [u'发送失败', u'未知异常 %s' % e, user.partner_id.id]
             queue.send_message(msg)
 
-            # 加入到短信队列
-            send_sms.delay(ids[0])
-
-            error = True
+            result = '10004'
         else:
             back_time = datetime.datetime.now()
             self.write(cr, uid, ids[0], {'back_time': back_time})
-            result = result.decode('utf-8')
-            res_tuple = result.split("|")
+            html = html.decode('utf-8')
+            res_tuple = html.split("|")
             if len(res_tuple) == 3:
                 status, msgId, description = res_tuple
 
                 if status == '1':
-                    msg = [u'发送成功', u'返回数据: %s' % result, user.partner_id.id]
+                    msg = [u'发送成功', u'返回数据: %s' % html, user.partner_id.id]
                     queue.send_message(msg)
 
                     self.write(cr, uid, ids[0], {
                         'state': 'send',
-                        'content': u'发送成功: %s' % result,})
+                        'content': u'发送成功: %s' % html, })
 
                     queue = self.browse(cr, uid, ids[0], context)
                     history_obj = self.pool.get('sms.gateway.history')
                     history_obj.create(cr, uid, {
-                         'gateway_id': queue.gateway_id.id,
-                         'queue_id': queue.id,
-                         'url': queue.url,
-                         'mobile': queue.mobile,
-                         'msg': queue.msg,
-                         'number_of_times': queue.send_count,
-                         'create_time': queue.create_time,
-                         'send_time': queue.send_time,
-                         'back_time': queue.back_time,
-                         }, )
+                        'gateway_id': queue.gateway_id.id,
+                        'queue_id': queue.id,
+                        'url': queue.url,
+                        'mobile': queue.mobile,
+                        'msg': queue.msg,
+                        'number_of_times': queue.send_count,
+                        'create_time': queue.create_time,
+                        'send_time': queue.send_time,
+                        'back_time': queue.back_time,
+                        }, )
 
                 else:
-                    msg = [u'发送失败', u'返回数据: %s' % result, user.partner_id.id]
+                    msg = [u'发送失败', u'返回数据: %s' % html, user.partner_id.id]
                     queue.send_message(msg)
 
                     self.write(cr, uid, ids[0], {
                         'state': 'error',
-                        'content': u'返回数据: %s' % result,})
+                        'content': u'返回数据: %s' % html, })
 
             else:
-                msg = [u'发送失败', u'接口异常 返回格式错误 %s' % result, user.partner_id.id]
+                msg = [u'发送失败', u'接口异常 返回格式错误 %s' % html, user.partner_id.id]
                 queue.send_message(msg)
 
                 self.write(cr, uid, ids[0], {
                     'state': 'draft',
-                    'content': u'接口异常 返回格式错误 %s' % result})
+                    'content': u'接口异常 返回格式错误 %s' % html})
 
-                # 加入到短信队列
-                send_sms.delay(ids[0])
+                result = '10004'
         finally:
             smshtml.close()
 
-        return not error
+        return result
 
     def send_message(self, cr, uid, ids, msg, context=None):
         """
@@ -306,6 +318,10 @@ class sms_gateway_queue(osv.Model):
         }
 
         self.message_post(cr, 1, ids, subtype=subtype, context=context, **message_values)
+
+    def add_to_celery(self, cr, uid, ids, context=None):
+        """将当前短信重新加入到队列等待发送"""
+        send_sms.delay(ids[0])
 
 
 class sms_gateway_history(osv.Model):
