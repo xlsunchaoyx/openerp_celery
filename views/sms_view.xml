@@ -12,7 +12,6 @@
                     <field name="name" />
                     <field name="url"/>
                     <field name="state"/>
-                    <field name="max_send"/>
                     <field name="param_ids"/>
                 </tree>
             </field>
@@ -27,7 +26,6 @@
                         <field name="name" />
                         <field name="url" />
                         <field name="state" />
-                        <field name="max_send" />
                     </group>
                     <group colspan="4">
                         <field name="param_ids">
@@ -74,6 +72,10 @@
             <field name="model">sms.gateway.queue</field>
             <field name="arch" type="xml">
                 <form string="SMS Queue" version="7.0">
+                    <header>
+                        <button name="add_to_celery" string="加入到队列" type="object"
+                                states="draft" confirm="确定将当前短信加入到队列发送?按钮返回后不会立即发送！"/>
+                    </header>
                     <group colspan="4">
                         <field name="url" />
                     </group>
@@ -99,12 +101,25 @@
             </field>
         </record>
 
+        <record id="sms_gateway_queue_filter" model="ir.ui.view">
+            <field name="name">sms.gateway.queue.filter</field>
+            <field name="model">sms.gateway.queue</field>
+            <field name="arch" type="xml">
+                <search string="Draft or Error">
+                    <filter icon="terp-check" string="Draft or Error" name="sms_queue_filter" domain="[('state','in',['error','draft'])]"/>
+                </search>
+            </field>
+        </record>
+
         <record model="ir.actions.act_window" id="action_sms_gateway_queue">
             <field name="name">SMS Queue</field>
             <field name="res_model">sms.gateway.queue</field>
             <field name="view_type">form</field>
             <field name="view_mode">form,tree</field>
             <field name="view_id" ref="sms_gateway_queue_tree" />
+            <field name="search_view_id" ref="sms_gateway_queue_filter"/>
+            <field name="context">{"search_default_sms_queue_filter": 1}</field>
+            <field name="filter" eval="True"/>
         </record>
 
         <menuitem name="SMS Queue" id="child_menu_sms_gateway_queue_menu" parent="menu_sms_gateway_menu" action="action_sms_gateway_queue"/>
